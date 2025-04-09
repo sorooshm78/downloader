@@ -1,102 +1,66 @@
 #include <iostream>
 #include <string>
-#include <cstring>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <netdb.h>
+#include <curl/curl.h>
+#include <fstream>
 
-int main(int argc, char* argv[]) {
-    if (argc != 3) {
-        std::cerr << "Usage: " << argv[0] << " <URL> <output_file>" << std::endl;
-        return 1;
+using namespace std;
+
+static size_t WriteCallback(void* contents, size_t size, size_t mem_byte, void* user_data) {
+    ofstream* file = static_cast<ofstream*>(user_data);
+    
+    if (file) {
+        file->write(static_cast<char*>(contents), mem_byte);
+        return mem_byte;
+    }
+    return 0;
+}
+
+bool DownloadFile(const string& url, const string& outputFilename) {
+    CURL* curl;
+    CURLcode res;
+    ofstream outFile(outputFilename, ios::binary);
+    
+    if (!outFile) {
+        cerr << "Failed to open output file: " << outputFilename << endl;
+        return false;
     }
 
-    std::string url = argv[1];
-    std::string outputFile = argv[2];
+    curl = curl_easy_init();
+    if (curl) {
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &outFile);
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 
-    // Parse URL (assumes format: http://host/path)
-    size_t hostStart = url.find("://");
-    if (hostStart == std::string::npos) {
-        std::cerr << "Invalid URL: Missing protocol" << std::endl;
-        return 1;
-    }
-    hostStart += 3; // Skip "://"
+        res = curl_easy_perform(curl);
 
-    size_t pathStart = url.find('/', hostStart);
-    std::string host = (pathStart == std::string::npos) ? url.substr(hostStart) : url.substr(hostStart, pathStart - hostStart);
-    std::string path = (pathStart == std::string::npos) ? "/" : url.substr(pathStart);
-
-    std::cout << "Host: " << host << std::endl;
-    std::cout << "Path: " << path << std::endl;
-
-    // Create socket
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0) {
-        std::cerr << "Failed to create socket" << std::endl;
-        return 1;
+        if (res != CURLE_OK) {
+            cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << endl;
+            curl_easy_cleanup(curl);
+            outFile.close();
+            return false;
+        }
+        
+        curl_easy_cleanup(curl);
+    } else {
+        cerr << "Failed to initialize libcurl" << endl;
+        outFile.close();
+        return false;
     }
     
-    // Resolve hostname
-    struct hostent* server = gethostbyname(host.c_str());
-    if (!server) {
-        std::cerr << "Failed to resolve hostname" << std::endl;
-        close(sock);
-        return 1;
+    outFile.close();
+    return true;
+}
+
+int main() {
+    string url = "https://file-examples.com/storage/fe2465184067ef97996fb41/2017/10/file-sample_150kB.pdf";
+    string outputFilename = "sample.pdf";
+
+    if (DownloadFile(url, outputFilename)) {
+        cout << "File downloaded successfully to: " << outputFilename << endl;
+    } else {
+        cout << "Failed to download file." << endl;
     }
-
-    // Set up server address
-    struct sockaddr_in serverAddr;
-    memset(&serverAddr, 0, sizeof(serverAddr));
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(80); // HTTP port
-    memcpy(&serverAddr.sin_addr.s_addr, server->h_addr, server->h_length);
-
-    // Connect to server
-    if (connect(sock, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
-        std::cerr << "Failed to connect to server" << std::endl;
-        close(sock);
-        return 1;
-    }
-
-    // Send HTTP GET request
-    std::string request = "GET " + path + " HTTP/1.1\r\n"
-                          "Host: " + host + "\r\n"
-                          "Connection: close\r\n\r\n";
-    send(sock, request.c_str(), request.size(), 0);
-
-    // Open output file
-    FILE* file = fopen(outputFile.c_str(), "wb");
-    if (!file) {
-        std::cerr << "Failed to open output file" << std::endl;
-        close(sock);
-        return 1;
-    }
-
-    // Read response and save to file
-    char buffer[4096];
-    bool headerEnded = false;
-    while (true) {
-        int bytesRead = recv(sock, buffer, sizeof(buffer), 0);
-        if (bytesRead <= 0) break;
-
-        if (!headerEnded) {
-            // Find end of HTTP header (double CRLF)
-            std::string data(buffer, bytesRead);
-            size_t headerEnd = data.find("\r\n\r\n");
-            if (headerEnd != std::string::npos) {
-                // Write content after header
-                fwrite(buffer + headerEnd + 4, 1, bytesRead - (headerEnd + 4), file);
-                headerEnded = true;
-            }
-        } else {
-            fwrite(buffer, 1, bytesRead, file);
-        }
-    }
-
-    fclose(file);
-    close(sock);
-    std::cout << "File downloaded: " << outputFile << std::endl;
-
+    
     return 0;
 }
