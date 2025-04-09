@@ -2,7 +2,7 @@
 
 ## TODO list 
 
-* [X] task1
-* [ ] task2
-* [ ] task3
+* [ ] refactor code with class 
+* [ ] add thread for download multi file
+
 
