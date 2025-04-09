@@ -24,44 +24,7 @@ size_t WriteCallback(void* contents, size_t file_size, size_t mem_byte, void* us
     return 0;
 }
 
-bool DownloadFile(const string& url, const string& output_filename) {
-    CURL* curl;
-    CURLcode res;
-    ofstream outFile(output_filename, ios::binary);
-    
-    if (!outFile) {
-        cerr << "Failed to open output file: " << output_filename << endl;
-        return false;
-    }
-
-    curl = curl_easy_init();
-    if (curl) {
-        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &outFile);
-        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-
-        res = curl_easy_perform(curl);
-
-        if (res != CURLE_OK) {
-            cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << endl;
-            curl_easy_cleanup(curl);
-            outFile.close();
-            return false;
-        }
-        
-        curl_easy_cleanup(curl);
-    } else {
-        cerr << "Failed to initialize libcurl" << endl;
-        outFile.close();
-        return false;
-    }
-    
-    outFile.close();
-    return true;
-}
-
-bool DownloadRangeFile(DownloadPart& download_part) {
+bool DownloadFile(DownloadPart& download_part) {
     CURL* curl;
     CURLcode res;
     ofstream outFile(download_part.filename, ios::binary);
@@ -144,7 +107,7 @@ int main() {
 
     for (auto dp : download_parts){
         cout << "part filename" << dp.filename << endl; 
-        DownloadRangeFile(dp);
+        DownloadFile(dp);
     }
 
     // if (DownloadFile(url, output_filename)) {
