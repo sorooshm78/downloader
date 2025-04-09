@@ -109,12 +109,5 @@ int main() {
         cout << "part filename" << dp.filename << endl; 
         DownloadFile(dp);
     }
-
-    // if (DownloadFile(url, output_filename)) {
-    //     cout << "File downloaded successfully to: " << output_filename << endl;
-    // } else {
-    //     cout << "Failed to download file." << endl;
-    // }
-    
     return 0;
 }
