@@ -3,6 +3,7 @@
 #include <curl/curl.h>
 #include <fstream>
 #include <vector>
+#include <thread>
 
 using namespace std;
 
@@ -90,7 +91,7 @@ long GetFileSize(const string& url) {
 }
 
 int main() {
-    string url = "https://file-examples.com/storage/fe2465184067ef97996fb41/2017/10/file-sample_150kB.pdf";
+    string url = "https://file-examples.com/storage/fef7a0384867fa86095088c/2017/11/file_example_MP3_700KB.mp3";
     string output_filename = "sample.pdf";
 
     vector<DownloadPart> download_parts;
@@ -104,10 +105,17 @@ int main() {
         string part_filename = output_filename + ".part" + to_string(i + 1);
         download_parts.push_back({url, part_filename, start, end, false});
     }
-
-    for (auto dp : download_parts){
-        cout << "part filename" << dp.filename << endl; 
-        DownloadFile(dp);
+    
+    vector<thread> threads;
+    threads.reserve(num_parts);
+    for (DownloadPart& dp : download_parts){
+        cout << "part filename (" << dp.start_byte << ":" << dp.end_byte << ") " << dp.filename << endl; 
+        threads.emplace_back(DownloadFile, ref(dp));
     }
+
+    for (auto &t : threads) {
+        t.join();
+    }
+
     return 0;
 }
