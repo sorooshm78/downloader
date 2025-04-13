@@ -15,107 +15,127 @@ struct DownloadPart {
     bool success;
 };
 
-size_t WriteCallback(void* contents, size_t file_size, size_t mem_byte, void* user_data) {
-    ofstream* file = static_cast<ofstream*>(user_data);
+class Downloader
+{
+private:
+    string url_;
+    string filename_;
+    int num_parts_;
+    vector<DownloadPart> download_parts_;
+    vector<thread> threads_;
     
-    if (file) {
-        file->write(static_cast<char*>(contents), mem_byte);
-        return mem_byte;
-    }
-    return 0;
-}
-
-bool DownloadFile(DownloadPart& download_part) {
-    CURL* curl;
-    CURLcode res;
-    ofstream outFile(download_part.filename, ios::binary);
-    
-    if (!outFile) {
-        cerr << "Failed to open output file: " << download_part.filename << endl;
-        return false;
+    static size_t WriteCallback(void* contents, size_t file_size, size_t mem_byte, void* user_data) {
+        ofstream* file = static_cast<ofstream*>(user_data);
+        
+        if (file) {
+            file->write(static_cast<char*>(contents), mem_byte);
+            return mem_byte;
+        }
+        return 0;
     }
 
-    curl = curl_easy_init();
-    if (curl) {
-        curl_easy_setopt(curl, CURLOPT_URL, download_part.url.c_str());
-        string range = to_string(download_part.start_byte) + "-" + (download_part.end_byte > 0 ? to_string(download_part.end_byte) : "");
-        curl_easy_setopt(curl, CURLOPT_RANGE, range.c_str());
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &outFile);
+public:
+    long GetFileSize()
+    {
+        CURL *curl = curl_easy_init();  
+
+        curl_easy_setopt(curl, CURLOPT_URL, url_.c_str());
+        curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-
-        res = curl_easy_perform(curl);
-
-        if (res != CURLE_OK) {
+        
+        CURLcode res = curl_easy_perform(curl);
+        if (res != CURLE_OK){
             cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << endl;
             curl_easy_cleanup(curl);
+            return 0;
+        }
+
+        double file_size = 0;
+        res = curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &file_size);
+        curl_easy_cleanup(curl);
+        
+        if (res != CURLE_OK || file_size < 0) {
+            cerr << "Failed to get file file_size" << endl;
+            return 0;
+        }
+        return static_cast<long>(file_size);
+    }
+
+    bool DownloadFile(DownloadPart& download_part) {
+        CURL* curl;
+        CURLcode res;
+        ofstream outFile(download_part.filename, ios::binary);
+        
+        if (!outFile) {
+            cerr << "Failed to open output file: " << download_part.filename << endl;
+            return false;
+        }
+    
+        curl = curl_easy_init();
+        if (curl) {
+            curl_easy_setopt(curl, CURLOPT_URL, download_part.url.c_str());
+            string range = to_string(download_part.start_byte) + "-" + (download_part.end_byte > 0 ? to_string(download_part.end_byte) : "");
+            curl_easy_setopt(curl, CURLOPT_RANGE, range.c_str());
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &outFile);
+            curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+            
+            res = curl_easy_perform(curl);
+            
+            if (res != CURLE_OK) {
+                cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << endl;
+                curl_easy_cleanup(curl);
+                outFile.close();
+                return false;
+            }
+            
+            curl_easy_cleanup(curl);
+        } else {
+            cerr << "Failed to initialize libcurl" << endl;
             outFile.close();
             return false;
         }
         
-        curl_easy_cleanup(curl);
-    } else {
-        cerr << "Failed to initialize libcurl" << endl;
         outFile.close();
-        return false;
-    }
-    
-    outFile.close();
-    download_part.success = true;
-    return true;
-}
-
-long GetFileSize(const string& url) {
-    CURL *curl = curl_easy_init();  
-
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    
-    CURLcode res = curl_easy_perform(curl);
-    if (res != CURLE_OK){
-        cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << endl;
-        curl_easy_cleanup(curl);
-        return 0;
+        download_part.success = true;
+        return true;
     }
 
-    double file_size = 0;
-    res = curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &file_size);
-    curl_easy_cleanup(curl);
+    void StartDownload()
+    {
+        threads_.reserve(num_parts_);
+        for (DownloadPart& download_part : download_parts_){
+            cout << "part filename (" << download_part.start_byte << ":" << download_part.end_byte << ") " << download_part.filename << endl; 
+            threads_.emplace_back([this, &download_part]() {
+                this->DownloadFile(download_part);
+            });
+        }
     
-    if (res != CURLE_OK || file_size < 0) {
-        cerr << "Failed to get file file_size" << endl;
-        return 0;
+        for (auto &thread : threads_) {
+            thread.join();
+        }
     }
-    return static_cast<long>(file_size);
-}
+    
+    Downloader(string url, string filename, int num_parts): url_(url), filename_(filename), num_parts_(num_parts)
+    {
+        long file_size = GetFileSize();
+        int part_size = file_size / num_parts;
+        
+        for (int i = 0; i < num_parts; ++i) {
+            long start = i * part_size;
+            long end = (i == num_parts - 1) ? file_size - 1 : start + part_size - 1;
+            string part_filename = filename_ + ".part" + to_string(i + 1);
+            download_parts_.push_back({url, part_filename, start, end, false});
+        }
+    }
+};
 
 int main() {
-    string url = "https://file-examples.com/storage/fef7a0384867fa86095088c/2017/11/file_example_MP3_700KB.mp3";
-    string output_filename = "sample.pdf";
-
-    vector<DownloadPart> download_parts;
+    const string url = "https://file-examples.com/storage/fef7a0384867fa86095088c/2017/11/file_example_MP3_700KB.mp3";
+    const string filename = "sample.pdf";
     const int num_parts = 5;
-    long file_size = GetFileSize(url);
-    int part_size = file_size / num_parts;
 
-    for (int i = 0; i < num_parts; ++i) {
-        long start = i * part_size;
-        long end = (i == num_parts - 1) ? file_size - 1 : start + part_size - 1;
-        string part_filename = output_filename + ".part" + to_string(i + 1);
-        download_parts.push_back({url, part_filename, start, end, false});
-    }
-    
-    vector<thread> threads;
-    threads.reserve(num_parts);
-    for (DownloadPart& dp : download_parts){
-        cout << "part filename (" << dp.start_byte << ":" << dp.end_byte << ") " << dp.filename << endl; 
-        threads.emplace_back(DownloadFile, ref(dp));
-    }
-
-    for (auto &t : threads) {
-        t.join();
-    }
-
+    Downloader downloader(url, filename, num_parts);
+    downloader.StartDownload();
     return 0;
 }
