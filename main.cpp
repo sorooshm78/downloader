@@ -34,38 +34,11 @@ private:
         return 0;
     }
 
-public:
-    long GetFileSize()
-    {
-        CURL *curl = curl_easy_init();  
-
-        curl_easy_setopt(curl, CURLOPT_URL, url_.c_str());
-        curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
-        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-        
-        CURLcode res = curl_easy_perform(curl);
-        if (res != CURLE_OK){
-            cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << endl;
-            curl_easy_cleanup(curl);
-            return 0;
-        }
-
-        double file_size = 0;
-        res = curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &file_size);
-        curl_easy_cleanup(curl);
-        
-        if (res != CURLE_OK || file_size < 0) {
-            cerr << "Failed to get file file_size" << endl;
-            return 0;
-        }
-        return static_cast<long>(file_size);
-    }
-
     bool DownloadFile(DownloadPart& download_part) {
         CURL* curl;
         CURLcode res;
         ofstream outFile(download_part.filename, ios::binary);
-        
+
         if (!outFile) {
             cerr << "Failed to open output file: " << download_part.filename << endl;
             return false;
@@ -101,7 +74,34 @@ public:
         return true;
     }
 
-    void StartDownload()
+public:
+    long GetFileSize()
+    {
+        CURL *curl = curl_easy_init();  
+
+        curl_easy_setopt(curl, CURLOPT_URL, url_.c_str());
+        curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+        
+        CURLcode res = curl_easy_perform(curl);
+        if (res != CURLE_OK){
+            cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << endl;
+            curl_easy_cleanup(curl);
+            return 0;
+        }
+
+        double file_size = 0;
+        res = curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &file_size);
+        curl_easy_cleanup(curl);
+        
+        if (res != CURLE_OK || file_size < 0) {
+            cerr << "Failed to get file file_size" << endl;
+            return 0;
+        }
+        return static_cast<long>(file_size);
+    }
+
+    void Start()
     {
         threads_.reserve(num_parts_);
         for (DownloadPart& download_part : download_parts_){
@@ -136,6 +136,6 @@ int main() {
     const int num_parts = 5;
 
     Downloader downloader(url, filename, num_parts);
-    downloader.StartDownload();
+    downloader.Start();
     return 0;
 }
