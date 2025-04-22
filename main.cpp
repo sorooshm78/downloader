@@ -10,6 +10,8 @@ using namespace std;
 struct DownloadPart {
     string url;
     string filename;
+    long downloaded_byte;
+    long total_byte;
     long start_byte;
     long end_byte;
     bool success;
@@ -34,6 +36,14 @@ private:
         return 0;
     }
 
+    static int ProgressCallback(void* clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow) {
+        DownloadPart* part = static_cast<DownloadPart*>(clientp);
+        if (dltotal > 0) {
+            part->downloaded_byte = dlnow;
+        }
+        return 0;
+    }
+
     bool DownloadFile(DownloadPart& download_part) {
         CURL* curl;
         CURLcode res;
@@ -52,7 +62,11 @@ private:
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, &outFile);
             curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-            
+
+            curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+            curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, ProgressCallback);
+            curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &download_part);
+
             res = curl_easy_perform(curl);
             
             if (res != CURLE_OK) {
@@ -119,19 +133,23 @@ public:
     Downloader(string url, string filename, int num_parts): url_(url), filename_(filename), num_parts_(num_parts)
     {
         long file_size = GetFileSize();
+        std::cout << "file size " << file_size << std::endl;
+        if (file_size == 0){
+            throw runtime_error("lenght not exist");
+        }
         int part_size = file_size / num_parts;
         
         for (int i = 0; i < num_parts; ++i) {
             long start = i * part_size;
             long end = (i == num_parts - 1) ? file_size - 1 : start + part_size - 1;
             string part_filename = filename_ + ".part" + to_string(i + 1);
-            download_parts_.push_back({url, part_filename, start, end, false});
+            download_parts_.push_back({url, part_filename, 0, part_size, start, end, false});
         }
     }
 };
 
 int main() {
-    const string url = "https://file-examples.com/storage/fef7a0384867fa86095088c/2017/11/file_example_MP3_700KB.mp3";
+    const string url = "https://pdn.sharezilla.ir/d/game/Marvels.Spider-Man.2-RUNE_p30download.com.part01.rar";
     const string filename = "sample.pdf";
     const int num_parts = 5;
 
