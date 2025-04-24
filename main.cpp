@@ -5,7 +5,8 @@
 #include <vector>
 #include <thread>
 #include <atomic>
-#include <fmt/core.h>  
+#include <fmt/core.h> 
+#include <fmt/color.h>
 
 using namespace std;
 
@@ -120,7 +121,7 @@ public:
     
     void DisplayProgress() {
         while (running_) {
-            cout << "\x1B[2J\x1B[H"; 
+            fmt::print("\x1B[2J\x1B[H"); 
 
             for(int i=0; i<download_parts_.size(); i++) {
                 int bar_width = 50;
@@ -129,14 +130,15 @@ public:
                 const int filled      = static_cast<int>(fraction * bar_width);
                 char   fill_char = '=';
                 
-                string bar = "[" +
-                    string(filled,  '=') +
-                    string(bar_width - filled, ' ') +
-                    "]";
+                const string bar = fmt::format(
+                    "[{0}{1}]",
+                    string(filled,  '='),                 // filled section
+                    string(bar_width - filled, ' ')       // empty section
+                );
                 
-                cout << bar << " " << percent << "%" << endl;
+                fmt::print(fmt::fg(fmt::color::spring_green), "{} {:.2f}% \n", bar, percent);
             }
-            cout << flush;
+            fflush(stdout);
             this_thread::sleep_for(chrono::seconds(5));
         }
     }
