@@ -4,6 +4,8 @@
 #include <fstream>
 #include <vector>
 #include <thread>
+#include <atomic>
+#include <fmt/core.h>  
 
 using namespace std;
 
@@ -25,6 +27,7 @@ private:
     int num_parts_;
     vector<DownloadPart> download_parts_;
     vector<thread> threads_;
+    atomic<bool> running_{true};
     
     static size_t WriteCallback(void* contents, size_t file_size, size_t mem_byte, void* user_data) {
         ofstream* file = static_cast<ofstream*>(user_data);
@@ -114,12 +117,38 @@ public:
         }
         return static_cast<long>(file_size);
     }
+    
+    void DisplayProgress() {
+        while (running_) {
+            cout << "\x1B[2J\x1B[H"; 
+
+            for(int i=0; i<download_parts_.size(); i++) {
+                int bar_width = 50;
+                double  percent = 100.0 * static_cast<double>(download_parts_[i].downloaded_byte) / download_parts_[i].total_byte;
+                const double fraction = percent / 100.0;
+                const int filled      = static_cast<int>(fraction * bar_width);
+                char   fill_char = '=';
+                
+                string bar = "[" +
+                    string(filled,  '=') +
+                    string(bar_width - filled, ' ') +
+                    "]";
+                
+                cout << bar << " " << percent << "%" << endl;
+            }
+            cout << flush;
+            this_thread::sleep_for(chrono::seconds(5));
+        }
+    }
 
     void Start()
     {
+        // Start progress display thread
+        thread progress_thread(&Downloader::DisplayProgress, this);
+
+        // Start download threads
         threads_.reserve(num_parts_);
         for (DownloadPart& download_part : download_parts_){
-            cout << "part filename (" << download_part.start_byte << ":" << download_part.end_byte << ") " << download_part.filename << endl; 
             threads_.emplace_back([this, &download_part]() {
                 this->DownloadFile(download_part);
             });
@@ -128,12 +157,14 @@ public:
         for (auto &thread : threads_) {
             thread.join();
         }
+
+        running_ = false;
+        progress_thread.join();
     }
     
     Downloader(string url, string filename, int num_parts): url_(url), filename_(filename), num_parts_(num_parts)
     {
         long file_size = GetFileSize();
-        std::cout << "file size " << file_size << std::endl;
         if (file_size == 0){
             throw runtime_error("lenght not exist");
         }
