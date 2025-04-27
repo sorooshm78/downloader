@@ -154,6 +154,23 @@ public:
         return static_cast<long>(file_size);
     }
     
+    void CompleteDisplayProgress() {
+        fmt::print("\x1B[2J\x1B[H"); 
+
+        for(int i=0; i<download_parts_.size(); i++) {
+            int bar_width = 50;
+            char fill_char = '=';
+            
+            const string bar = fmt::format(
+                "[{0}]",
+                string(bar_width,  fill_char)
+            );
+            
+            fmt::print(fmt::fg(fmt::color::spring_green), "{} {:.2f}% \n", bar, 100.00);
+        }
+        fflush(stdout);
+    }
+
     void DisplayProgress() {
         while (running_) {
             fmt::print("\x1B[2J\x1B[H"); 
@@ -167,7 +184,7 @@ public:
                 
                 const string bar = fmt::format(
                     "[{0}{1}]",
-                    string(filled,  '='),                 // filled section
+                    string(filled,  fill_char),                 // filled section
                     string(bar_width - filled, ' ')       // empty section
                 );
                 
@@ -197,6 +214,7 @@ public:
 
         running_ = false;
         progress_thread.join();
+        CompleteDisplayProgress();
         MergeParts();
     }
     
