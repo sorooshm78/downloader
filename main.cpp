@@ -5,9 +5,11 @@
 #include <vector>
 #include <thread>
 #include <atomic>
-#include <fmt/core.h> 
+#include <fmt/core.h>
 #include <fmt/color.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 using namespace std;
 
 struct DownloadPart {
@@ -93,6 +95,39 @@ private:
     }
 
 public:
+    bool MergeParts()
+    {
+        ofstream final_file(filename_, ios::binary | ios::trunc);
+        if (!final_file)
+        {
+            cerr << "Cannot create final file: " << filename_ << '\n';
+            return false;
+        }
+
+        for (int i = 0; i < num_parts_; ++i)
+        {
+            const string part_name = filename_ + ".part" + to_string(i + 1);
+            ifstream part_file(part_name, ios::binary);
+
+            if (!part_file)
+            {
+                cerr << "Missing part file " << part_name << '\n';
+                return false;
+            }
+
+            final_file << part_file.rdbuf();
+            part_file.close();
+        }
+        final_file.close();
+
+        for (int i = 0; i < num_parts_; ++i)
+        {
+            const string part_name = filename_ + ".part" + to_string(i + 1);
+            fs::remove(part_name);
+        }
+        return true;
+    }
+
     long GetFileSize()
     {
         CURL *curl = curl_easy_init();  
@@ -162,6 +197,7 @@ public:
 
         running_ = false;
         progress_thread.join();
+        MergeParts();
     }
     
     Downloader(string url, string filename, int num_parts): url_(url), filename_(filename), num_parts_(num_parts)
